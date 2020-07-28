@@ -1,4 +1,5 @@
-Youtube-WEB是用php Laravel 框架写的流量代理网站，通过对接谷歌API获得数据，用来搭建Youtube 视频镜像站，实现墙内传播指定的Youtube播放列表。
+Youtube-WEB是用php Laravel 框架写的代理网站，
+通过对接谷歌API获得数据，用来搭建Youtube 视频镜像站，实现墙内传播指定的Youtube播放列表或频道。
 
 Youtube 需要支持PHP环境的虚拟主机或VPS，上传代码并简单设置即可使用。
 
@@ -34,10 +35,7 @@ Youtube 需要支持PHP环境的虚拟主机或VPS，上传代码并简单设置
 
 - 网站根目录设置为 public/ 可以在墙内测试访问了。
 
-- 用管理员登录前端，然后点击添加频道（最终做成了播放列表）
-填入播放列表ID 
->https://www.youtube.com/watch?v=fN2l0iYLDeI&list=PLPVsJMpVPkCfvg2UWDu3LQ9mt4FYpwoTz 地址中的
->PLPVsJMpVPkCfvg2UWDu3LQ9mt4FYpwoTz 即可
+- 用管理员登录前端，然后点击添加频道或播放列表的ID 串
 
 ### **安全安全**
 
@@ -52,17 +50,15 @@ Youtube 需要支持PHP环境的虚拟主机或VPS，上传代码并简单设置
 
 [alaouy/Youtube](https://github.com/alaouy/Youtube)
 
-程序用了上方两个扩展包，如果想要更多功能（搜索、频道、推荐、高清……），
+程序用了上方两个扩展包，如果想要更多功能（搜索、推荐、首页……），
 甚至做成另一个You2php 请参考上方两个链接。
 对有php 基础的人，并不困难。
 
 前端使用了 react-create-app ，源文件在 react-app 目录，可自行修改并发布，然后拷贝至 public/h5 目录。
 
 #### 关于
-这个1.0版本非常简单，只提供视频列表的读取和音视频播放，
-只是本人向国内几个还值得拯救的人，固定推送并选择措辞并不严厉的一些Youtuber的视频，
-
-注：措辞严厉的他们就不敢听了。
+这个1.0版本非常简单，只提供视频列表及频道的读取和音视频播放，
+希望可以用这个程序向国内的还值得拯救的同胞，固定推送并选择措辞并不严厉的一些Youtuber的视频，
 
 希望让他们可以一点点的思考空间。
 
