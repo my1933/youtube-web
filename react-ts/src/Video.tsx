@@ -1,4 +1,4 @@
-import React, { Component } from "react";
+import React, { Component, ReactNode } from "react";
 import "./style.css";
 import {
   PageHeader,
@@ -15,16 +15,29 @@ import {
   message,
   Row,
   Col,
+  Menu,
 } from "antd";
 import { get, post } from "./utils/http";
-import { BarsOutlined, CloudSyncOutlined } from "@ant-design/icons";
+import {
+  BarsOutlined,
+  CloudSyncOutlined,
+  ReadOutlined,
+  ProfileOutlined,
+} from "@ant-design/icons";
 import { Redirect, withRouter, RouteComponentProps } from "react-router-dom";
 
-interface VideoList {
+enum ChannelType {
+  "list" = "list",
+  "channel" = "channel",
+}
+interface VideoListInfo {
   title: string;
   id: string;
   thumbnail: string;
-  channelId: string;
+}
+
+interface VideoList {
+  [key: string]: VideoListInfo[];
 }
 
 interface Videos {
@@ -41,17 +54,18 @@ interface Page {
 }
 
 interface State {
-  drawer_visible: boolean;
-  video_list: VideoList[];
-  videos: Videos[];
-  current_list_id: string;
-  token: string;
-  page: Page;
-  page_title: string;
-  sort: number;
-  channelVisible: boolean;
-  addChannel: boolean;
-  addChannelId: "";
+  left_drawer_visible: boolean; // 左侧的抽屉
+  list_type: ChannelType; // 视频列表类型 enum[channel,list]，也控制左侧菜单的展开
+  channel_list: VideoList; // 频道列表
+  videos: Videos[]; // 视频列表
+  current_channel_id: string; // 当前的频道列表
+  token: string; // TOKEN
+  page: Page; // 页码
+  page_title: string; // 页标题
+  sort: number; // 排序
+  channel_modal_visible: boolean; // 添加频道的Modal
+  add_channel_power: boolean; // 添加频道的权限
+  add_channel_inpu_id: ""; // 添加频道的ID
 }
 
 interface Dom {
@@ -60,9 +74,10 @@ interface Dom {
 }
 
 interface PageInfo {
-  id: string;
-  page: number;
+  current_channel_id: string;
+  current_page: number;
   sort: number;
+  list_type: ChannelType;
 }
 
 interface VisitedVideo {
@@ -72,10 +87,14 @@ interface VisitedVideo {
 class Video extends Component<RouteComponentProps> {
   state: State = {
     token: "",
-    drawer_visible: false,
-    video_list: [],
+    left_drawer_visible: false,
+    list_type: ChannelType.list,
+    channel_list: {
+      list: [],
+      channel: [],
+    },
     videos: [],
-    current_list_id: "",
+    current_channel_id: "",
     page: {
       current: 1,
       total: 1,
@@ -83,9 +102,9 @@ class Video extends Component<RouteComponentProps> {
     },
     page_title: "",
     sort: 1,
-    channelVisible: false,
-    addChannel: false,
-    addChannelId: "",
+    channel_modal_visible: false,
+    add_channel_power: false,
+    add_channel_inpu_id: "",
   };
 
   constructor(props: RouteComponentProps) {
@@ -100,61 +119,58 @@ class Video extends Component<RouteComponentProps> {
     window.addEventListener("scroll", this.handleScroll);
     const token = localStorage.getItem("token") || "";
     const isManager = localStorage.getItem("isManager") || "0";
-    const addChannel = isManager == "1" ? true : false;
+    const add_channel_power = isManager == "1" ? true : false;
     if (token) {
       await this.getVideoList().then((data: any) => {
-        if (data.length) {
-          const video_list = data;
-          let current_list_id = "";
-          let videos_page = 1;
-          let sort: number = 1;
-          const storagePageInfo = localStorage.getItem("page_info") || "";
-          if (storagePageInfo) {
-            const page_info: PageInfo = JSON.parse(storagePageInfo);
-            current_list_id = page_info.id;
-            videos_page = page_info.page;
-            sort = page_info.sort;
-          }
-          let page_title = video_list[0].title;
-          if (!current_list_id) {
-            current_list_id = video_list[0].id;
-          } else {
-            const current_t = video_list.find(
-              (o: any) => o.id === current_list_id
-            );
-            if (current_t && current_t.title) {
-              page_title = current_t.title;
-            }
-          }
-
-          this.getVideos(current_list_id, videos_page, sort).then(
-            (data: any) => {
-              this.setState({
-                video_list: video_list,
-                videos: data.list,
-                page: data.page,
-                current_list_id: current_list_id,
-                page_title: page_title,
-                addChannel: addChannel,
-              });
-              const video_id = localStorage.getItem("video_id");
-              if (video_id) {
-                const index = this.video_dom.findIndex((dom: Dom) => {
-                  return dom.id === video_id;
-                });
-                if (index !== -1) {
-                  window.scrollTo(0, this.video_dom[index].srcoll - 74);
-                }
-              }
-              this.storageScrollTop();
-              this.handleScroll("event");
-            }
+        const channel_list = data;
+        let {
+          current_channel_id,
+          current_page,
+          sort,
+          list_type,
+        } = this.getPageStorage();
+        let page_title = "";
+        console.log(list_type, channel_list);
+        if (!current_channel_id && channel_list[list_type].length) {
+          current_channel_id = channel_list[list_type][0].id;
+          page_title = channel_list[list_type][0].title;
+        } else if (channel_list[list_type].length) {
+          const current_t = channel_list[list_type].find(
+            (o: any) => o.id === current_channel_id
           );
+          if (current_t && current_t.title) {
+            page_title = current_t.title;
+          }
         }
+        console.log("call getVideos");
+        this.getVideos(current_channel_id, current_page, sort, list_type).then(
+          (data: any) => {
+            console.log(data);
+            this.setState({
+              channel_list: channel_list,
+              videos: data.list,
+              page: data.page,
+              current_channel_id: current_channel_id,
+              page_title: page_title,
+              add_channel_power: add_channel_power,
+              list_type: list_type,
+            });
+            const video_id = localStorage.getItem("video_id");
+            if (video_id) {
+              const index = this.video_dom.findIndex((dom: Dom) => {
+                return dom.id === video_id;
+              });
+              if (index !== -1) {
+                window.scrollTo(0, this.video_dom[index].srcoll - 74);
+              }
+            }
+            this.storageScrollTop();
+            this.handleScroll("event");
+          }
+        );
       });
     }
   }
-
   componentDidUpdate() {
     const dom = document.getElementsByClassName("video_card");
     let doms: Dom[] = [];
@@ -175,7 +191,7 @@ class Video extends Component<RouteComponentProps> {
   getVideoList = () => {
     const token = localStorage.getItem("token") || "";
     return get("/video_list", { token: token }).then((data: any) => {
-      if (data.status && data.data.length) {
+      if (data.status) {
         return data.data;
       } else {
         return [];
@@ -183,25 +199,39 @@ class Video extends Component<RouteComponentProps> {
     });
   };
 
-  getVideos = (id?: string, current_page?: number, current_sort?: number) => {
+  getVideos = (
+    id?: string,
+    current_page?: number,
+    current_sort?: number | null,
+    current_type?: ChannelType | null,
+    refresh?: boolean
+  ) => {
     const token = localStorage.getItem("token") || "";
-    let { current_list_id, page, sort } = this.state;
+    let { current_channel_id, page, sort, list_type } = this.state;
     if (id) {
-      current_list_id = id;
+      current_channel_id = id;
     }
-    let videos_page = page.current;
+    let get_page = page.current;
     if (current_page) {
-      videos_page = current_page;
+      get_page = current_page;
     }
-    if (current_sort !== undefined) {
+    if (current_sort !== undefined && current_sort !== null) {
       sort = current_sort;
     }
-    return get("/videos", {
+    if (current_type) {
+      list_type = current_type;
+    }
+    let params = {
       token: token,
-      id: current_list_id,
-      page: videos_page,
+      id: current_channel_id,
+      page: get_page,
       sort: sort,
-    }).then((data: any) => {
+      type: list_type,
+    };
+    if (refresh) {
+      params = Object.assign(params, { refresh: true });
+    }
+    return get("/videos", params).then((data: any) => {
       if (data.status && data.data.list.length) {
         return data.data;
       } else {
@@ -210,45 +240,60 @@ class Video extends Component<RouteComponentProps> {
     });
   };
 
-  showDrawer = () => {
+  showLeftDrawer = () => {
     this.setState({
-      drawer_visible: true,
+      left_drawer_visible: true,
     });
   };
 
-  onClose = () => {
+  hideLeftDrawer = () => {
     this.setState({
-      drawer_visible: false,
+      left_drawer_visible: false,
     });
   };
 
-  //列表点击
-  handleListChange: (current_list_id: string, page_title: string) => void = (
-    current_list_id,
-    page_title
-  ) => {
-    this.getVideos(current_list_id, 1, 1).then((data: any) => {
+  rootMenuKeys = ["list", "channel"];
+
+  handleMenuOpenChange = (key: any) => {
+    const { list_type } = this.state;
+    const open_keys = [list_type];
+    const menu_keys: ChannelType[] = [ChannelType.list, ChannelType.channel];
+    const latestOpenKey = key.find((k: any) => open_keys.indexOf(k) === -1);
+    if (menu_keys.indexOf(latestOpenKey) !== -1) {
       this.setState({
-        drawer_visible: false,
-        videos: data.list,
-        page: data.page,
-        current_list_id: current_list_id,
-        page_title: page_title,
+        list_type: latestOpenKey ? latestOpenKey : ChannelType.list,
       });
-      const video_id = localStorage.getItem("video_id");
-      if (video_id) {
-        const index = this.video_dom.findIndex((dom: Dom) => {
-          return dom.id === video_id;
+    }
+  };
+
+  handleMenuClick = (e: any) => {
+    let { current_channel_id } = this.state;
+    if (e.key !== current_channel_id) {
+      current_channel_id = e.key;
+      const page_title = e.item.props.data_title;
+      this.getVideos(current_channel_id, 1, 1).then((data: any) => {
+        this.setState({
+          left_drawer_visible: false,
+          videos: data.list,
+          page: data.page,
+          current_channel_id: current_channel_id,
+          page_title: page_title,
         });
-        if (index !== -1) {
-          window.scrollTo(0, this.video_dom[index].srcoll - 74);
-        } else {
-          window.scrollTo(0, 0);
+        const video_id = localStorage.getItem("video_id");
+        if (video_id) {
+          const index = this.video_dom.findIndex((dom: Dom) => {
+            return dom.id === video_id;
+          });
+          if (index !== -1) {
+            window.scrollTo(0, this.video_dom[index].srcoll - 74);
+          } else {
+            window.scrollTo(0, 0);
+          }
         }
-      }
-      this.storageScrollTop();
-      this.handleScroll("event");
-    });
+        this.storageScrollTop();
+        this.handleScroll("event");
+      });
+    }
   };
 
   onPageChange = (page: number) => {
@@ -276,15 +321,32 @@ class Video extends Component<RouteComponentProps> {
 
   // 记录当前访问
   storageScrollTop = () => {
-    const { current_list_id, page, sort } = this.state;
+    const { current_channel_id, page, sort, list_type } = this.state;
     localStorage.setItem(
       "page_info",
       JSON.stringify({
-        id: current_list_id,
+        id: current_channel_id,
         page: page.current,
         sort: sort,
+        list_type: list_type,
       })
     );
+  };
+  // 读取页面浏览信息
+  getPageStorage = () => {
+    const storagePageInfo = localStorage.getItem("page_info") || "";
+    let page_info: PageInfo;
+    if (storagePageInfo) {
+      page_info = JSON.parse(storagePageInfo);
+    } else {
+      page_info = {
+        current_channel_id: "",
+        current_page: 1,
+        sort: 1,
+        list_type: ChannelType.list,
+      };
+    }
+    return page_info;
   };
   // 记录当前位置
   storageVideoId = (id: string) => {
@@ -367,17 +429,17 @@ class Video extends Component<RouteComponentProps> {
   // 添加频道
   handleAddChange = () => {
     this.setState({
-      channelVisible: true,
+      channel_modal_visible: true,
     });
   };
   handleAddChannelOk = () => {
-    const { addChannelId } = this.state;
+    const { add_channel_inpu_id } = this.state;
     const token = localStorage.getItem("token") || "";
-    if (addChannelId.length != 34) {
+    if (add_channel_inpu_id.length != 34 && add_channel_inpu_id.length != 24) {
       message.error("错误的ID");
       return false;
     }
-    post("/admin/video_list", { id: addChannelId, token: token }).then(
+    post("/admin/channel_list", { id: add_channel_inpu_id, token: token }).then(
       (data: any) => {
         if (data.status) {
           message.success("添加成功");
@@ -387,170 +449,205 @@ class Video extends Component<RouteComponentProps> {
       }
     );
     this.setState({
-      channelVisible: false,
+      channel_modal_visible: false,
     });
   };
   handleAddChannelCancel = () => {
     this.setState({
-      channelVisible: false,
+      channel_modal_visible: false,
     });
   };
-  // 更新当前视频列表
+  // 更新当前视频列表服务器缓存
   listUpdate = () => {
-    const { current_list_id } = this.state;
-    const token = localStorage.getItem("token");
-    post("/list_update", { id: current_list_id, token: token }).then(
-      (data: any) => {
-        if (data.status) {
-          message.loading("视频列表更新成功", 2.5, () => {
-            window.location.reload();
-          });
-        } else {
-          message.warn("更新失败");
-        }
-      }
-    );
+    this.getVideos("", 0, null, null, true);
   };
 
   public render() {
     const token = localStorage.getItem("token") || "";
     const {
       videos,
-      drawer_visible,
-      video_list,
+      left_drawer_visible,
+      channel_list,
       page_title,
       sort,
-      addChannel,
-      current_list_id,
+      add_channel_power,
+      current_channel_id,
     } = this.state;
+    console.log(add_channel_power);
     const { Meta } = Card;
-
-    if (token) {
-      let extra = [
-        <Button onClick={this.logout}>退出</Button>,
-        <Button onClick={this.onSortChange}>{sort ? "最新" : "最早"}</Button>,
-        <Button
-          type="primary"
-          shape="circle"
-          icon={<CloudSyncOutlined />}
-          onClick={this.listUpdate}
-        />,
-      ];
-      if (addChannel) {
-        extra.push(
-          <Button shape="circle" onClick={this.handleAddChange}>
-            +
-          </Button>
-        );
-      }
-      return (
-        <>
-          <Affix offsetTop={0}>
-            <PageHeader
-              className="site-page-header"
-              onBack={this.showDrawer}
-              title={page_title}
-              subTitle=""
-              ghost={false}
-              backIcon={<BarsOutlined />}
-              extra={extra}
-            />
-          </Affix>
-
-          <Drawer
-            title="播放列表"
-            placement="left"
-            closable={false}
-            onClose={this.onClose}
-            visible={drawer_visible}
-          >
-            <List
-              itemLayout="horizontal"
-              dataSource={video_list}
-              renderItem={(item) => (
-                <List.Item>
-                  <List.Item.Meta
-                    avatar={<Avatar src={item.thumbnail} />}
-                    title={
-                      <Button
-                        type={item.id == current_list_id ? "link" : "text"}
-                        onClick={() =>
-                          this.handleListChange(item.id, item.title)
-                        }
-                      >
-                        {item.title}
-                      </Button>
-                    }
-                  />
-                </List.Item>
-              )}
-            />
-          </Drawer>
-          <Row className="card_list" gutter={{ md: 16, xl: 32 }}>
-            {videos.map((v, i) => {
-              return (
-                <Col
-                  sm={32}
-                  md={16}
-                  xl={8}
-                  className="video_card card_margin_bottom"
-                  id={"video_" + v.id}
-                  key={i}
-                >
-                  <Card
-                    style={{ width: "100%" }}
-                    cover={<img alt="example" src={v.thumbnail} />}
-                    actions={[
-                      <Button
-                        onClick={() => {
-                          this.handlePlayClick(v.id, "video", v.title);
-                        }}
-                        type={this.isPlay(v.id) ? "dashed" : "primary"}
-                      >
-                        视频
-                      </Button>,
-                      <Button
-                        onClick={() => {
-                          this.handlePlayClick(v.id, "audio", v.title);
-                        }}
-                        type={this.isPlay(v.id) ? "dashed" : "default"}
-                      >
-                        音频
-                      </Button>,
-                    ]}
-                  >
-                    <Meta title={v.title} description={v.created_at} />
-                  </Card>
-                </Col>
-              );
-            })}
-          </Row>
-          <Pagination
-            current={this.state.page.current}
-            onChange={this.onPageChange}
-            defaultPageSize={50}
-            total={this.state.page.total}
-            showSizeChanger={false}
-          />
-          <BackTop />
-          <Modal
-            title="添加频道"
-            visible={this.state.channelVisible}
-            onOk={this.handleAddChannelOk}
-            onCancel={this.handleAddChannelCancel}
-          >
-            <Input
-              placeholder="输入列表ID"
-              onChange={(event) => {
-                this.setState({ addChannelId: event.target.value });
-              }}
-            />
-          </Modal>
-        </>
-      );
-    } else {
+    const { SubMenu } = Menu;
+    if (!token) {
       return <Redirect to="/"></Redirect>;
     }
+    let pageHeaderExtra: ReactNode[] = [
+      <Button onClick={this.logout} key="logout_button">
+        退出
+      </Button>,
+      <Button onClick={this.onSortChange} key="sort_button">
+        {sort ? "最新" : "最早"}
+      </Button>,
+      <Button
+        type="primary"
+        shape="circle"
+        icon={<CloudSyncOutlined />}
+        onClick={this.listUpdate}
+        key="update_button"
+      />,
+    ];
+    if (add_channel_power) {
+      pageHeaderExtra.push(
+        <Button
+          shape="circle"
+          onClick={this.handleAddChange}
+          key="addChange_button"
+        >
+          +
+        </Button>
+      );
+    }
+
+    return (
+      <>
+        <Affix offsetTop={0}>
+          <PageHeader
+            className="site-page-header"
+            onBack={this.showLeftDrawer}
+            title={page_title}
+            subTitle=""
+            ghost={false}
+            backIcon={<BarsOutlined />}
+            extra={pageHeaderExtra}
+          />
+        </Affix>
+
+        <Drawer
+          title="播放列表"
+          placement="left"
+          closable={false}
+          onClose={this.hideLeftDrawer}
+          visible={left_drawer_visible}
+        >
+          <Menu
+            mode="inline"
+            openKeys={[this.state.list_type]}
+            onOpenChange={this.handleMenuOpenChange}
+            style={{ width: 256 }}
+            onClick={this.handleMenuClick}
+          >
+            <SubMenu
+              key="list"
+              title={
+                <span>
+                  <ProfileOutlined />
+                  <span>视频列表</span>
+                </span>
+              }
+            >
+              {channel_list["list"].map((v, i) => {
+                return (
+                  <Menu.Item
+                    key={v.id}
+                    className={
+                      current_channel_id === v.id
+                        ? "ant-menu-item-selected"
+                        : ""
+                    }
+                    data-title={v.title}
+                  >
+                    {v.title}
+                  </Menu.Item>
+                );
+              })}
+            </SubMenu>
+            <SubMenu
+              key="channel"
+              title={
+                <span>
+                  <ReadOutlined />
+                  <span>频道列表</span>
+                </span>
+              }
+            >
+              {channel_list["channel"].map((v, i) => {
+                return (
+                  <Menu.Item
+                    key={v.id}
+                    className={
+                      current_channel_id === v.id
+                        ? "ant-menu-item-selected"
+                        : ""
+                    }
+                    data-title={v.title}
+                  >
+                    {v.title}
+                  </Menu.Item>
+                );
+              })}
+            </SubMenu>
+          </Menu>
+        </Drawer>
+        <Row className="card_list" gutter={{ md: 16, xl: 32 }}>
+          {videos.map((v, i) => {
+            return (
+              <Col
+                sm={32}
+                md={16}
+                xl={8}
+                className="video_card card_margin_bottom"
+                id={"video_" + v.id}
+                key={i}
+              >
+                <Card
+                  style={{ width: "100%" }}
+                  cover={<img alt="example" src={v.thumbnail} />}
+                  actions={[
+                    <Button
+                      onClick={() => {
+                        this.handlePlayClick(v.id, "video", v.title);
+                      }}
+                      type={this.isPlay(v.id) ? "dashed" : "primary"}
+                    >
+                      视频
+                    </Button>,
+                    <Button
+                      onClick={() => {
+                        this.handlePlayClick(v.id, "audio", v.title);
+                      }}
+                      type={this.isPlay(v.id) ? "dashed" : "default"}
+                    >
+                      音频
+                    </Button>,
+                  ]}
+                >
+                  <Meta title={v.title} description={v.created_at} />
+                </Card>
+              </Col>
+            );
+          })}
+        </Row>
+        <Pagination
+          current={this.state.page.current}
+          onChange={this.onPageChange}
+          defaultPageSize={50}
+          total={this.state.page.total}
+          showSizeChanger={false}
+        />
+        <BackTop />
+        <Modal
+          title="添加频道"
+          visible={this.state.channel_modal_visible}
+          onOk={this.handleAddChannelOk}
+          onCancel={this.handleAddChannelCancel}
+        >
+          <Input
+            placeholder="输入列表ID"
+            onChange={(event) => {
+              this.setState({ add_channel_inpu_id: event.target.value });
+            }}
+          />
+        </Modal>
+      </>
+    );
   }
 }
 

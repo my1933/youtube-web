@@ -2,10 +2,14 @@
 
 use Illuminate\Http\Request;
 
-Route::get('play', 'VideoController@index');
+Route::get('play', 'PlayController@play');
+
+
 Route::get('video_list', 'VideoController@videoList');
 Route::get('videos', 'VideoController@videos');
-Route::get('images', 'VideoController@images');
+Route::get('play', 'PlayController@play');
+
 Route::post('token', 'UserController@token');
-Route::post('admin/video_list', 'AdminController@videoList');
-Route::post('list_update', 'AdminController@listUpdate');
+
+Route::post('admin/channel_list', 'AdminController@channelList');
+
